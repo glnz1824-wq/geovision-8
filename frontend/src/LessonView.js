@@ -2,7 +2,8 @@ import React, { useContext, useState } from 'react';
 import { AccessibilityContext } from './AccessibilityContext';
 
 const LessonView = ({ lesson }) => {
-    const { fontSize, contrastTheme } = useContext(AccessibilityContext);
+    // Извлекаем состояние лупы из контекста (добавьте magnifierActive в ваш AccessibilityContext, если его там еще нет)
+    const { fontSize, contrastTheme, magnifierActive } = useContext(AccessibilityContext);
     const [isSpeaking, setIsSpeaking] = useState(false);
 
     // Функция синтеза речи для озвучивания учебника
@@ -29,7 +30,13 @@ const LessonView = ({ lesson }) => {
     }
 
     return (
-        <div className={`lesson-container theme-${contrastTheme} size-${fontSize}`} style={{ padding: '20px' }}>
+        /* ВАЖНО: Динамически добавляем класс 'magnifier-active', если режим лупы включен в контексте.
+          Благодаря этому CSS-правила сработают только тогда, когда пользователь активирует лупу на панели ОВЗ.
+        */
+        <div 
+            className={`lesson-container theme-${contrastTheme} size-${fontSize} ${magnifierActive ? 'magnifier-active' : ''}`} 
+            style={{ padding: '20px' }}
+        >
             <h2>{lesson.title}</h2>
             
             <button 

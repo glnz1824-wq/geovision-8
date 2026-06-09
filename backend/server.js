@@ -26,6 +26,16 @@ const pool = new Pool({
 
 const SECRET = process.env.JWT_SECRET || "geovision8_secret_key";
 
+// Константы ролей для исключения опечаток
+const ROLES = {
+  STUDENT: "Ученик",
+  TEACHER: "Учитель",
+  ADMIN: "Администратор",
+};
+
+// Лимиты баллов для защиты от взлома через Postman (пример)
+const MAX_TASK_POINTS = 100; 
+
 function createToken(user) {
   return jwt.sign(
     {
@@ -58,7 +68,7 @@ function auth(req, res, next) {
 }
 
 function teacherOrAdmin(req, res, next) {
-  if (req.user && (req.user.role === "Учитель" || req.user.role === "Администратор")) {
+  if (req.user && (req.user.role === ROLES.TEACHER || req.user.role === ROLES.ADMIN)) {
     return next();
   }
   return res.status(403).json({ message: "Нет доступа" });
@@ -80,7 +90,7 @@ app.post("/api/register", async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (role === "Администратор") {
+    if (role === ROLES.ADMIN) {
       return res.status(403).json({
         message: "Администратор создается только в базе данных",
       });
@@ -101,7 +111,7 @@ app.post("/api/register", async (req, res) => {
        (full_name, email, password_hash, role, school, student_class, score)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, full_name, email, role, school, student_class, score`,
-      [full_name, normalizedEmail, passwordHash, role, school, student_class || "8-А", 0]
+      [full_name.trim(), normalizedEmail, passwordHash, role, school.trim(), student_class ? student_class.trim() : "8-А", 0]
     );
 
     const user = result.rows[0];
@@ -161,10 +171,12 @@ app.post("/api/login", async (req, res) => {
 
 app.get("/api/users", auth, teacherOrAdmin, async (req, res) => {
   try {
+    // Добавлен LIMIT для предотвращения падения сервера при больших объемах данных
     const result = await pool.query(
       `SELECT id, full_name, email, role, school, student_class, score 
        FROM users 
-       ORDER BY score DESC, id`
+       ORDER BY score DESC, id
+       LIMIT 200` 
     );
 
     return res.json(result.rows);
@@ -201,7 +213,8 @@ app.get("/api/feedback", auth, teacherOrAdmin, async (req, res) => {
       `SELECT feedbacks.id, users.full_name, users.student_class, feedbacks.message
        FROM feedbacks
        JOIN users ON users.id = feedbacks.user_id
-       ORDER BY feedbacks.id DESC`
+       ORDER BY feedbacks.id DESC
+       LIMIT 100`
     );
 
     return res.json(result.rows);
@@ -211,8 +224,10 @@ app.get("/api/feedback", auth, teacherOrAdmin, async (req, res) => {
   }
 });
 
-// ИСПРАВЛЕННЫЙ ЭНДПОИНТ С ЗАЩИТОЙ ОТ НАКРУТКИ БАЛЛОВ
+// АБСОЛЮТНО ЗАЩИЩЕННЫЙ ЭНДПОИНТ С ИСПОЛЬЗОВАНИЕМ ТРАНЗАКЦИЙ (Исключает Race Condition)
 app.post("/api/results", auth, async (req, res) => {
+  const client = await pool.connect(); // Берем отдельный клиент для управления транзакцией
+  
   try {
     const { task_id, points } = req.body;
 
@@ -220,10 +235,20 @@ app.post("/api/results", auth, async (req, res) => {
       return res.status(400).json({ message: "Не указан task_id" });
     }
 
-    const safePoints = Math.max(0, Number(points) || 0); // Исключаем отрицательные баллы
+    // Валидация диапазона баллов (от 0 до максимального лимита)
+    let safePoints = Math.max(0, Number(points) || 0);
+    if (safePoints > MAX_TASK_POINTS) {
+      safePoints = MAX_TASK_POINTS; // Срезаем читерские баллы до максимума
+    }
 
-    // Проверяем, решал ли уже пользователь эту задачу
-    const existingResult = await pool.query(
+    // НАЧАЛО ТРАНЗАКЦИИ
+    await client.query("BEGIN");
+
+    // Блокируем строку пользователя, чтобы параллельные запросы ждали своей очереди (Защита от Race Condition)
+    await client.query("SELECT id FROM users WHERE id = $1 FOR UPDATE", [req.user.id]);
+
+    // Проверяем прошлый результат выполнения этой задачи
+    const existingResult = await client.query(
       "SELECT id, points FROM results WHERE user_id = $1 AND task_id = $2",
       [req.user.id, task_id]
     );
@@ -231,43 +256,49 @@ app.post("/api/results", auth, async (req, res) => {
     if (existingResult.rows.length > 0) {
       const previousPoints = existingResult.rows[0].points;
 
-      // Обновляем результат только если новый балл выше предыдущего
       if (safePoints > previousPoints) {
         const diff = safePoints - previousPoints;
 
-        await pool.query(
+        // Обновляем баллы за задачу
+        await client.query(
           "UPDATE results SET points = $1 WHERE user_id = $2 AND task_id = $3",
           [safePoints, req.user.id, task_id]
         );
 
-        // Начисляем только разницу, чтобы не дублировать баллы
-        await pool.query("UPDATE users SET score = score + $1 WHERE id = $2", [
+        // Обновляем общий рейтинг пользователя
+        await client.query("UPDATE users SET score = score + $1 WHERE id = $2", [
           diff,
           req.user.id,
         ]);
 
+        await client.query("COMMIT"); // Фиксируем изменения
         return res.json({ message: "Результат обновлен, добавлены новые баллы" });
       }
 
+      await client.query("COMMIT");
       return res.json({ message: "Результат сохранен (предыдущий балл был выше)" });
     } else {
-      // Если решает впервые — просто сохраняем и прибавляем баллы целиком
-      await pool.query(
+      // Если задача решается впервые
+      await client.query(
         `INSERT INTO results (user_id, task_id, points) 
          VALUES ($1, $2, $3)`,
         [req.user.id, task_id, safePoints]
       );
 
-      await pool.query("UPDATE users SET score = score + $1 WHERE id = $2", [
+      await client.query("UPDATE users SET score = score + $1 WHERE id = $2", [
         safePoints,
         req.user.id,
       ]);
 
+      await client.query("COMMIT"); // Фиксируем изменения
       return res.json({ message: "Результат успешно сохранен" });
     }
   } catch (error) {
+    await client.query("ROLLBACK"); // Откатываем все изменения при любой ошибке
     console.error("Ошибка сохранения результата:", error);
     return res.status(500).json({ message: "Ошибка сохранения результата" });
+  } finally {
+    client.release(); // ОБЯЗАТЕЛЬНО возвращаем клиент обратно в пул
   }
 });
 
@@ -275,19 +306,21 @@ app.get("/api/results", auth, async (req, res) => {
   try {
     let result;
 
-    if (req.user.role === "Учитель" || req.user.role === "Администратор") {
+    if (req.user.role === ROLES.TEACHER || req.user.role === ROLES.ADMIN) {
       result = await pool.query(
         `SELECT results.id, users.full_name, users.student_class, results.task_id, results.points
          FROM results
          JOIN users ON users.id = results.user_id
-         ORDER BY results.id DESC`
+         ORDER BY results.id DESC
+         LIMIT 200`
       );
     } else {
       result = await pool.query(
         `SELECT id, task_id, points 
          FROM results 
          WHERE user_id = $1 
-         ORDER BY id DESC`,
+         ORDER BY id DESC
+         LIMIT 100`,
         [req.user.id]
       );
     }

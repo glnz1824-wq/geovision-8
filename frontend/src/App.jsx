@@ -1,834 +1,870 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import AuthAndRegister from "./AuthAndRegister";
 import { theory8 } from "./data/theory8";
 import { tasks8 } from "./data/tasks8";
-import { audioLessons8 } from "./data/audioLessons8";
 import "./App.css";
 
-// Безопасное кодирование паролей
 function encodePassword(password) {
   return btoa(unescape(encodeURIComponent(password)));
 }
 
+const audioLessons8 = [
+  {
+    id: "audio-1",
+    title: "Аудиоурок 1. Четырёхугольники",
+    text: "Четырёхугольник — это геометрическая фигура, состоящая из четырёх вершин и четырёх сторон.",
+  },
+  {
+    id: "audio-2",
+    title: "Аудиоурок 2. Параллелограмм",
+    text: "Параллелограмм — это четырёхугольник, у которого противоположные стороны попарно параллельны.",
+  },
+  {
+    id: "audio-3",
+    title: "Аудиоурок 3. Ромб и квадрат",
+    text: "Ромб — это параллелограмм, у которого все стороны равны. Квадрат сочетает свойства прямоугольника и ромба.",
+  },
+];
+
+const INITIAL_USERS = [
+  {
+    id: 1,
+    full_name: "Гульназ Маратова",
+    email: "student@test.com",
+    password: encodePassword("1234"),
+    role: "Ученик",
+    school: "Школа им. Мукая Элебаева",
+    student_class: "8-А",
+    score: 20,
+    completedTasks: ["quad"],
+  },
+  {
+    id: 2,
+    full_name: "Бакыт Токтосунов",
+    email: "teacher@test.com",
+    password: encodePassword("1234"),
+    role: "Учитель",
+    school: "Школа им. Мукая Элебаева",
+    student_class: "Учитель",
+    score: 0,
+    completedTasks: [],
+  },
+  {
+    id: 3,
+    full_name: "Администратор",
+    email: "admin@test.com",
+    password: encodePassword("admin123"),
+    role: "Администратор",
+    school: "GeoVision 8",
+    student_class: "Система",
+    score: 0,
+    completedTasks: [],
+  },
+];
+
 function App() {
-  // Авторизация и сохранение сессии пользователя
+  const [usersDatabase, setUsersDatabase] = useState(() => {
+    const saved = localStorage.getItem("geo_users_db");
+    return saved ? JSON.parse(saved) : INITIAL_USERS;
+  });
+
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem("geo_user");
     return saved ? JSON.parse(saved) : null;
   });
 
-  // Инклюзивные параметры интерфейса (ГОСТ для слабовидящих)
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem("geo_messages");
+    return saved
+      ? JSON.parse(saved)
+      : [
+          {
+            id: 1,
+            from: "Гульназ Маратова",
+            fromEmail: "student@test.com",
+            to: "Бакыт Токтосунов",
+            text: "Здравствуйте! Подскажите, чему равна сумма внутренних углов четырёхугольника?",
+            replies: [],
+          },
+        ];
+  });
+
   const [theme, setTheme] = useState("beige-theme");
-  const [fontSize, setFontSize] = useState(20);
-  const [letterSpacing, setLetterSpacing] = useState(1);
-  const [lineHeight, setLineHeight] = useState(1.6);
+  const [fontSize, setFontSize] = useState(18);
+  const [lineHeight, setLineHeight] = useState(1.5);
+  
+  const [zoomMode, setZoomMode] = useState(false);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-  // Состояние доступности (Экранный Диктор и Лупа)
-  const [screenReader, setScreenReader] = useState(false);
-  const [isMagnifierActive, setIsMagnifierActive] = useState(false);
-  const [mousePos, setMousePos] = useState({ clientX: 0, clientY: 0, pageX: 0, pageY: 0 });
-
-  // Навигация
+  const [readerMode, setReaderMode] = useState(false);
   const [currentScreen, setCurrentScreen] = useState("main");
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-
-  // Базы данных (Инициализация дефолтными значениями)
-  const [geometryTheory, setGeometryTheory] = useState(theory8 || []);
-  const [tasks] = useState(tasks8 || []);
-  const [audioLessons] = useState(audioLessons8 || []);
-
-  const [selectedTopicId, setSelectedTopicId] = useState(theory8?.[0]?.id || "");
-  const [selectedTaskId, setSelectedTaskId] = useState(tasks8?.[0]?.id || "");
-
-  // Обратная связь и интерактивные тесты
-  const [feedbackText, setFeedbackText] = useState("");
-  const [feedbackList, setFeedbackList] = useState([]);
-  const [taskAnswers, setTaskAnswers] = useState({});
+  const [selectedTopicId, setSelectedTopicId] = useState(theory8[0]?.id || "");
   const [taskStatuses, setTaskStatuses] = useState({});
+  const [feedbackText, setFeedbackText] = useState("");
+  const [targetTeacher, setTargetTeacher] = useState("");
+  const [selectedStudentFilter, setSelectedStudentFilter] = useState("");
 
-  // Локальная имитация СУБД Пользователей
-  const [usersDatabase, setUsersDatabase] = useState([
-    {
-      id: 1,
-      full_name: "Гульназ Маратова",
-      email: "student@test.com",
-      password: encodePassword("1234"),
-      role: "Ученик",
-      school: "Школа им. Мукая Элебаева",
-      student_class: "8-А",
-      score: 20,
-      completedTasks: ["task1"],
-      token: "jwt-stu-777",
-    },
-    {
-      id: 2,
-      full_name: "Бакыт Токтосунов",
-      email: "teacher@test.com",
-      password: encodePassword("1234"),
-      role: "Учитель",
-      school: "Школа им. Мукая Элебаева",
-      student_class: "Преподаватель математики",
-      score: 0,
-      completedTasks: [],
-      token: "jwt-tea-888",
-    },
-    {
-      id: 3,
-      full_name: "Администратор Системы",
-      email: "admin@test.com",
-      password: encodePassword("admin123"),
-      role: "Администратор",
-      school: "КГТУ им. И. Раззакова",
-      student_class: "Разработчик",
-      score: 999,
-      completedTasks: [],
-      token: "jwt-adm-999",
-    },
-  ]);
+  useEffect(() => {
+    localStorage.setItem("geo_users_db", JSON.stringify(usersDatabase));
+  }, [usersDatabase]);
 
-  // Разграничение прав доступа (RBAC Модель)
-  const isStudent = user?.role === "Ученик";
-  const isTeacher = user?.role === "Учитель";
-  const isAdmin = user?.role === "Администратор";
-  const canManageContent = isTeacher || isAdmin;
-  const canViewDatabase = isTeacher || isAdmin;
+  useEffect(() => {
+    localStorage.setItem("geo_messages", JSON.stringify(messages));
+  }, [messages]);
 
-  // Константы для вычисления матрицы лупы
-  const magnifierScale = 2.2;
-  const magnifierRadius = 110; // Размер линзы (220px общая ширина)
-
-  // Стили отображения текста
-  const dynamicStyles = {
-    fontSize: `${fontSize}px`,
-    letterSpacing: `${letterSpacing}px`,
-    lineHeight: lineHeight,
-  };
-
-  const selectedTopic = useMemo(() => {
-    return geometryTheory.find((t) => t.id === selectedTopicId) || geometryTheory[0];
-  }, [geometryTheory, selectedTopicId]);
-
-  const selectedTask = useMemo(() => {
-    return tasks.find((t) => t.id === selectedTaskId) || tasks[0];
-  }, [tasks, selectedTaskId]);
-
-  // Система полнотекстового поиска по теории
-  const filteredTheory = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return geometryTheory;
-    return geometryTheory.filter(
-      (t) =>
-        t.title?.toLowerCase().includes(q) ||
-        t.short?.toLowerCase().includes(q) ||
-        t.content?.toLowerCase().includes(q)
-    );
-  }, [searchQuery, geometryTheory]);
-
-  // Отслеживание курсора мыши для экранной лупы
   useEffect(() => {
     const handleMouseMove = (e) => {
-      setMousePos({
-        clientX: e.clientX,
-        clientY: e.clientY,
-        pageX: e.clientX + window.scrollX,
-        pageY: e.clientY + window.scrollY,
-      });
+      setMousePos({ x: e.clientX, y: e.clientY });
     };
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
-  // Интеллектуальный речевой диктор (TTS) при наведении курсора
-  useEffect(() => {
-    if (!screenReader) return;
+  const isStudent = user?.role === "Ученик";
+  const isTeacher = user?.role === "Учитель";
+  const isAdmin = user?.role === "Администратор";
 
-    const readElement = (e) => {
-      const el = e.target.closest(
-        "button, a, input, textarea, select, h1, h2, h3, p, span, strong, small, td, th"
+  const studentsList = useMemo(
+    () => usersDatabase.filter((item) => item.role === "Ученик"),
+    [usersDatabase]
+  );
+
+  const teachersList = useMemo(
+    () => usersDatabase.filter((item) => item.role === "Учитель"),
+    [usersDatabase]
+  );
+
+  const selectedTopic =
+    theory8.find((item) => item.id === selectedTopicId) || theory8[0];
+
+  const filteredTheory = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return theory8;
+
+    return theory8.filter(
+      (item) =>
+        item.title?.toLowerCase().includes(q) ||
+        item.short?.toLowerCase().includes(q) ||
+        item.content?.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
+
+  const filteredTasks = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const baseTasks = tasks8 || [];
+    if (!q) return baseTasks;
+
+    return baseTasks.filter(
+      (item) =>
+        item.topic?.toLowerCase().includes(q) ||
+        item.question?.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
+
+  const filteredAudio = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return audioLessons8;
+
+    return audioLessons8.filter(
+      (item) =>
+        item.title.toLowerCase().includes(q) ||
+        item.text.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
+
+  const filteredMessages = useMemo(() => {
+    if (!isTeacher) return messages;
+    if (!selectedStudentFilter) return messages;
+    return messages.filter((item) => item.from === selectedStudentFilter);
+  }, [messages, selectedStudentFilter, isTeacher]);
+
+  const pageUrl = `${window.location.origin}/#${currentScreen}`;
+
+  const dynamicTextStyles = {
+    fontSize: `${fontSize}px`,
+    lineHeight,
+  };
+
+  const ZOOM_SCALE = 2;   
+  const LENS_SIZE = 200;  
+  const LENS_RADIUS = LENS_SIZE / 2; 
+
+  const magnifierContentStyle = {
+    transform: `translate(${LENS_RADIUS - mousePos.x * ZOOM_SCALE}px, ${LENS_RADIUS - mousePos.y * ZOOM_SCALE}px) scale(${ZOOM_SCALE})`,
+    pointerEvents: "none"
+  };
+
+  function speakText(text) {
+    if (!text || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const speech = new SpeechSynthesisUtterance(text);
+    speech.lang = "ru-RU";
+    speech.rate = 0.9;
+    window.speechSynthesis.speak(speech);
+  }
+
+  function stopSpeech() {
+    window.speechSynthesis?.cancel();
+  }
+
+  function goTo(screen) {
+    stopSpeech();
+    setCurrentScreen(screen);
+  }
+
+  useEffect(() => {
+    if (!readerMode) return;
+
+    const readElement = (event) => {
+      const element = event.target.closest(
+        "button, a, input, textarea, select, h1, h2, h3, p, span, td, th, label"
       );
-      if (!el) return;
+      if (!element) return;
 
       const text =
-        el.getAttribute("aria-label") ||
-        el.placeholder ||
-        el.innerText ||
-        el.value;
+        element.getAttribute("aria-label") ||
+        element.placeholder ||
+        element.innerText ||
+        element.value;
 
       if (text) speakText(text);
     };
 
     document.addEventListener("pointerover", readElement);
     return () => document.removeEventListener("pointerover", readElement);
-  }, [screenReader]);
+  }, [readerMode]);
 
-  const speakText = (text) => {
-    if (!text || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel(); // Очистить предыдущую очередь озвучки
-
-    const speech = new SpeechSynthesisUtterance(text);
-    speech.lang = "ru-RU";
-    speech.rate = 0.95;
-    window.speechSynthesis.speak(speech);
-  };
-
-  const stopSpeech = () => {
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-  };
-
-  const goTo = (screen) => {
-    stopSpeech();
-    setCurrentScreen(screen);
-  };
-
-  // Аутентификация, авторизация и регистрация пользователей
-  const handleLoginOrRegister = (data) => {
+  function handleLoginOrRegister(data) {
     if (data.mode === "login") {
       const found = usersDatabase.find(
-        (u) =>
-          u.email.toLowerCase() === data.email.toLowerCase() &&
-          u.password === data.password
+        (item) =>
+          item.email.toLowerCase() === data.email.toLowerCase() &&
+          item.password === data.password
       );
 
       if (!found) {
-        alert("Ошибка авторизации: Пользователь не найден или неверный пароль.");
+        alert("Неверный логин или пароль");
         return;
       }
 
-      const withToken = { ...found, token: data.token || found.token || "mock-jwt-token" };
-      localStorage.setItem("geo_user", JSON.stringify(withToken));
-      setUser(withToken);
+      const activeUser = {
+        ...found,
+        token: `mock-token-${Date.now()}`,
+      };
+
+      setUser(activeUser);
+      localStorage.setItem("geo_user", JSON.stringify(activeUser));
+      setShowAuthModal(false);
       setCurrentScreen("main");
-      speakText(`Добро пожаловать в систему, ${withToken.full_name}`);
       return;
     }
 
-    // Логика Регистрации нового пользователя
     const exists = usersDatabase.some(
-      (u) => u.email.toLowerCase() === data.email.toLowerCase()
+      (item) => item.email.toLowerCase() === data.email.toLowerCase()
     );
 
     if (exists) {
-      alert("Пользователь с таким email адресом уже зарегистрирован!");
+      alert("Пользователь с таким email уже существует");
       return;
     }
 
-    const created = {
-      id: usersDatabase.length + 1,
+    const createdUser = {
+      id: Date.now(),
       full_name: data.full_name,
       email: data.email,
       password: data.password,
-      role: data.role,
+      role: data.role || "Ученик",
       school: data.school,
-      student_class: data.student_class || "8-А",
+      student_class: data.student_class,
       score: 0,
       completedTasks: [],
-      token: data.token || "generated-jwt-token",
+      token: `mock-token-${Date.now()}`,
     };
 
-    setUsersDatabase((prev) => [...prev, created]);
-    localStorage.setItem("geo_user", JSON.stringify(created));
-    setUser(created);
+    setUsersDatabase((prev) => [...prev, createdUser]);
+    setUser(createdUser);
+    localStorage.setItem("geo_user", JSON.stringify(createdUser));
+    setShowAuthModal(false);
     setCurrentScreen("main");
-    speakText(`Регистрация завершена. Добро пожаловать, ${created.full_name}`);
-  };
+  }
 
-  // Интерактивная проверка ответов на задачи с начислением баллов (gamification)
-  const checkAnswer = () => {
-    if (!selectedTask) return;
+  function logout() {
+    localStorage.removeItem("geo_user");
+    setUser(null);
+    setCurrentScreen("main");
+  }
 
-    const correctAnswer = (
-      selectedTask.answer ||
-      selectedTask.correctAnswer ||
-      String(selectedTask.correct ?? "")
-    ).trim().toLowerCase();
-
-    const value = (taskAnswers[selectedTask.id] || "").trim().toLowerCase();
-
-    if (value === correctAnswer) {
-      setTaskStatuses((prev) => ({ ...prev, [selectedTask.id]: "success" }));
-
-      if (!user.completedTasks?.includes(selectedTask.id)) {
-        const updatedUser = {
-          ...user,
-          score: user.score + 10,
-          completedTasks: [...(user.completedTasks || []), selectedTask.id],
-        };
-
-        setUser(updatedUser);
-        localStorage.setItem("geo_user", JSON.stringify(updatedUser));
-        setUsersDatabase((prev) =>
-          prev.map((u) => (u.email === user.email ? updatedUser : u))
-        );
-      }
-      alert("Великолепно! Ответ верный. Вам начислено +10 баллов.");
-      speakText("Правильно! Плюс десять баллов.");
-    } else {
-      setTaskStatuses((prev) => ({ ...prev, [selectedTask.id]: "error" }));
-      alert("Ошибка. Ответ не совпадает. Попробуйте прочитать подсказку.");
-      speakText("Неверно. Попробуйте еще раз.");
-    }
-  };
-
-  // Отправка обратной связи / сообщений в СУБД преподавателя
-  const sendFeedback = (e) => {
-    e.preventDefault();
-    if (!feedbackText.trim()) return;
-
-    setFeedbackList((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        author: `${user.full_name} (${user.role}, класс: ${user.student_class})`,
-        text: feedbackText,
-      },
-    ]);
-
-    setFeedbackText("");
-    alert("Ваш вопрос успешно отправлен преподавателю в личный кабинет.");
-    speakText("Вопрос отправлен.");
-  };
-
-  // CMS: Добавление учебных параграфов преподавателем или админом
-  const addParagraph = (e) => {
-    e.preventDefault();
-    const title = e.target.elements.title.value.trim();
-    const content = e.target.elements.content.value.trim();
-
-    if (!title || !content) {
-      alert("Пожалуйста, заполните все поля формы.");
+  function checkAnswer(taskId, selectedIndex) {
+    if (!user) {
+      alert("Сначала войдите в систему");
       return;
     }
 
-    const newTopic = {
-      id: `topic-${Date.now()}`,
-      title,
-      short: "Добавлено через панель CMS.",
-      content,
-      formula: "S = a × h",
-      image: "📐",
+    const task = tasks8.find((item) => item.id === taskId);
+    if (!task) return;
+
+    if (selectedIndex !== task.correct) {
+      setTaskStatuses((prev) => ({ ...prev, [taskId]: "error" }));
+      alert("Неверно. Попробуйте ещё раз.");
+      return;
+    }
+
+    setTaskStatuses((prev) => ({ ...prev, [taskId]: "success" }));
+
+    if (!user.completedTasks?.includes(taskId)) {
+      const updatedUser = {
+        ...user,
+        score: Number(user.score || 0) + 10,
+        completedTasks: [...(user.completedTasks || []), taskId],
+      };
+
+      setUser(updatedUser);
+      localStorage.setItem("geo_user", JSON.stringify(updatedUser));
+
+      setUsersDatabase((prev) =>
+        prev.map((item) => (item.email === user.email ? updatedUser : item))
+      );
+    }
+
+    alert("Правильно! +10 баллов.");
+  }
+
+  function sendMessage(event) {
+    event.preventDefault();
+
+    if (!user) {
+      alert("Сначала войдите в систему");
+      return;
+    }
+
+    if (!feedbackText.trim()) return;
+
+    const newMessage = {
+      id: Date.now(),
+      from: user.full_name,
+      fromEmail: user.email,
+      to: targetTeacher || "Учитель",
+      text: feedbackText,
+      replies: [],
     };
 
-    setGeometryTheory((prev) => [...prev, newTopic]);
-    setSelectedTopicId(newTopic.id);
-    setCurrentScreen("topic");
-    e.target.reset();
-    alert("Новый параграф успешно добавлен в оглавление.");
-  };
+    setMessages((prev) => [newMessage, ...prev]);
+    setFeedbackText("");
+    setTargetTeacher("");
 
-  const deleteTopic = (id) => {
-    const next = geometryTheory.filter((t) => t.id !== id);
-    setGeometryTheory(next);
-    if (selectedTopicId === id && next.length > 0) {
-      setSelectedTopicId(next[0].id);
-    }
-    goTo("theory");
-    alert("Тема успешно удалена из системы.");
-  };
+    alert("Сообщение отправлено учителю");
+  }
 
-  const playAudioLesson = (lesson) => {
-    speakText(
-      `${lesson.title}. Описание урока: ${lesson.description || lesson.text || "Материал озвучен встроенным диктором"}`
+  function sendTeacherReply(messageId, replyText) {
+    if (!replyText.trim()) return;
+
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              replies: [
+                ...(message.replies || []),
+                {
+                  id: Date.now(),
+                  author: user.full_name,
+                  text: replyText,
+                },
+              ],
+            }
+          : message
+      )
     );
-  };
+  }
 
-  // Система инклюзивного распространения / Поделиться
-  const handleShare = (platform) => {
-    const text = `Я изучаю интерактивную геометрию в приложении GeoVision 8 на странице: ${currentScreen}. Присоединяйся!`;
-    const url = window.location.href;
+  function deleteUser(userId) {
+    if (!window.confirm("Удалить пользователя?")) return;
+    setUsersDatabase((prev) => prev.filter((item) => item.id !== userId));
+  }
 
-    if (platform === "whatsapp") {
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text + " " + url)}`, "_blank");
-    } else if (platform === "telegram") {
-      window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, "_blank");
-    } else if (platform === "native" && navigator.share) {
-      navigator.share({ title: "GeoVision 8", text, url }).catch(console.error);
+  function changeUserRole(userId, newRole) {
+    setUsersDatabase((prev) =>
+      prev.map((item) =>
+        item.id === userId ? { ...item, role: newRole } : item
+      )
+    );
+  }
+
+  function sharePage() {
+    if (navigator.share) {
+      navigator.share({
+        title: "GeoVision 8",
+        text: "Интерактивный учебник по геометрии 8 класса",
+        url: pageUrl,
+      });
     } else {
-      navigator.clipboard.writeText(`${text} ${url}`);
-      alert("Ссылка успешно скопирована в буфер обмена!");
+      navigator.clipboard.writeText(pageUrl);
+      alert("Ссылка скопирована");
     }
-  };
+  }
 
-  // Рендеринг основного слоя контента (Используется один раз, предотвращая цикличность линзы)
-  const renderContent = () => (
-    <div className="app-main-content-layer" style={dynamicStyles}>
-      {/* ПАНЕЛЬ УПРАВЛЕНИЯ ОВЗ (ДОСТУПНОСТЬ ПО ГОСТУ) */}
+  const renderPageContent = (isMirror = false) => (
+    <div className="content-mirror-container">
       <header className="ovz-control-panel">
         <div className="ovz-row">
-          <div className="ovz-group theme-selectors">
-            <button className={theme === "light-theme" ? "active-t" : ""} onClick={() => setTheme("light-theme")}>Светлая</button>
-            <button className={theme === "dark-theme" ? "active-t" : ""} onClick={() => setTheme("dark-theme")}>Тёмная</button>
-            <button className={theme === "contrast-theme" ? "active-t" : ""} onClick={() => setTheme("contrast-theme")}>Контраст (ЦН)</button>
-            <button className={theme === "beige-theme" ? "active-t" : ""} onClick={() => setTheme("beige-theme")}>Бежевая (Книга)</button>
+          <div className="ovz-group">
+            <button onClick={() => setTheme("light-theme")}>Светлая</button>
+            <button onClick={() => setTheme("dark-theme")}>Тёмная</button>
+            <button onClick={() => setTheme("contrast-theme")}>Контраст</button>
+            <button onClick={() => setTheme("beige-theme")}>Бежевая</button>
           </div>
 
-          <div className="ovz-group sliders">
+          <div className="ovz-group">
             <label>
-              Текст: <b>{fontSize}px</b>
-              <input type="range" min="16" max="36" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} />
+              Размер: {fontSize}px
+              <input
+                type="range"
+                min="16"
+                max="30"
+                value={fontSize}
+                onChange={(e) => setFontSize(Number(e.target.value))}
+              />
             </label>
 
             <label>
-              Межбуквенный: <b>{letterSpacing}px</b>
-              <input type="range" min="0" max="10" value={letterSpacing} onChange={(e) => setLetterSpacing(Number(e.target.value))} />
-            </label>
-
-            <label>
-              Интервал: <b>{lineHeight}</b>
-              <input type="range" min="1.4" max="2.6" step="0.1" value={lineHeight} onChange={(e) => setLineHeight(Number(e.target.value))} />
+              Строки: {lineHeight}
+              <input
+                type="range"
+                min="1.2"
+                max="2.2"
+                step="0.1"
+                value={lineHeight}
+                onChange={(e) => setLineHeight(Number(e.target.value))}
+              />
             </label>
           </div>
 
-          <div className="ovz-group toggles">
-            <button className={`toggle-btn ${isMagnifierActive ? "enabled" : ""}`} onClick={() => {
-              const next = !isMagnifierActive;
-              setIsMagnifierActive(next);
-              speakText(next ? "Экранная лупа активирована" : "Лупа отключена");
-            }}>
-              🔍 Лупа: {isMagnifierActive ? "ВКЛ" : "ВЫКЛ"}
+          <div className="ovz-group">
+            <button
+              className={zoomMode ? "tool-on" : ""}
+              onClick={() => setZoomMode((prev) => !prev)}
+            >
+              🔍 Лупа: {zoomMode ? "ВКЛ" : "ВЫКЛ"}
             </button>
 
-            <button className={`toggle-btn ${screenReader ? "enabled" : ""}`} onClick={() => {
-              const next = !screenReader;
-              setScreenReader(next);
-              next ? speakText("Экранный диктор запущен. Наводите курсор на элементы текста.") : stopSpeech();
-            }}>
-              🎙️ Диктор: {screenReader ? "ВКЛ" : "ВЫКЛ"}
+            <button
+              className={readerMode ? "tool-on" : ""}
+              onClick={() => {
+                const next = !readerMode;
+                setReaderMode(next);
+                next ? speakText("Диктор включен") : stopSpeech();
+              }}
+            >
+              🎙️ Диктор: {readerMode ? "ВКЛ" : "ВЫКЛ"}
             </button>
           </div>
         </div>
       </header>
 
-      {/* ЭКРАН АВТОРИЗАЦИИ / РЕГИСТРАЦИИ */}
-      {!user ? (
-        <AuthAndRegister
-          onLoginSuccess={handleLoginOrRegister}
-          handleHoverSpeak={() => {}}
-          dynamicTextStyles={dynamicStyles}
+      <nav className="main-navigation-bar">
+        <div className="logo-section" onClick={() => goTo("main")}>
+          📐 GeoVision 8
+        </div>
+
+        <div className="menu-links">
+          <button onClick={() => goTo("main")}>Главная</button>
+          <button onClick={() => goTo("theory")}>Теория</button>
+          <button onClick={() => goTo("tasks")}>Задания</button>
+          <button onClick={() => goTo("audio")}>Аудиоуроки</button>
+
+          {user && !isAdmin && (
+            <button onClick={() => goTo("contacts")}>Связь с учителем</button>
+          )}
+
+          {user && (
+            <button onClick={() => goTo("profile")}>
+              {isAdmin
+                ? "Админ-панель"
+                : isTeacher
+                ? "Кабинет учителя"
+                : "Кабинет ученика"}
+            </button>
+          )}
+        </div>
+
+        <div className="user-zone">
+          {user ? (
+            <>
+              <span>
+                👤 <b>{user.full_name}</b> ({user.role})
+              </span>
+              <button className="logout-btn" onClick={logout}>
+                Выйти
+              </button>
+            </>
+          ) : (
+            <button className="login-btn" onClick={() => setShowAuthModal(true)}>
+              Вход / Регистрация
+            </button>
+          )}
+        </div>
+      </nav>
+
+      <div className="global-search-container">
+        <input
+          className="search-input"
+          placeholder="Поиск по геометрии: ромб, квадрат, параллелограмм..."
+          value={searchQuery}
+          onChange={(event) => {
+            setSearchQuery(event.target.value);
+            if (event.target.value.trim()) setCurrentScreen("theory");
+          }}
         />
-      ) : (
-        <>
-          {/* НАВИГАЦИОННАЯ ПАНЕЛЬ */}
-          <nav className="main-navigation-bar">
-            <div className="logo-section" onClick={() => goTo("main")}>
-              📐 GeoVision 8
-            </div>
+      </div>
 
-            <div className="menu-links">
-              <button className={currentScreen === "main" ? "active-l" : ""} onClick={() => goTo("main")}>Главная</button>
-              <button className={currentScreen === "about" ? "active-l" : ""} onClick={() => goTo("about")}>О проекте</button>
-              <button className={currentScreen === "learn" || currentScreen === "theory" || currentScreen === "topic" ? "active-l" : ""} onClick={() => goTo("learn")}>Обучение</button>
-              <button className={currentScreen === "tasks" || currentScreen === "task" ? "active-l" : ""} onClick={() => goTo("tasks")}>Задания</button>
-              <button className={currentScreen === "audio" ? "active-l" : ""} onClick={() => goTo("audio")}>Аудиоуроки</button>
-              <button className={currentScreen === "profile" ? "active-l" : ""} onClick={() => goTo("profile")}>
-                {isStudent ? "Кабинет" : "База Данных"}
-              </button>
-              <button className={currentScreen === "contacts" ? "active-l" : ""} onClick={() => goTo("contacts")}>
-                {isStudent ? "Помощь" : `Сообщения (${feedbackList.length})`}
-              </button>
-            </div>
+      {showAuthModal && (
+        <div className="auth-modal">
+          <div className="auth-modal-card">
+            <button
+              className="modal-close"
+              onClick={() => setShowAuthModal(false)}
+            >
+              ×
+            </button>
 
-            <div className="user-profile-tag">
-              <span>👤 {user.full_name}</span>
-              <small>[{user.role}]</small>
-            </div>
-          </nav>
+            <AuthAndRegister
+              onLoginSuccess={handleLoginOrRegister}
+              dynamicTextStyles={{}}
+            />
+          </div>
+        </div>
+      )}
 
-          {/* КОНТЕНТНАЯ ОБЛАСТЬ СТРАНИЦ */}
-          <main className="content-area">
-            {currentScreen !== "main" && (
-              <button className="back-btn" onClick={() => goTo("main")}>
-                ← Вернуться на главную страницу
-              </button>
-            )}
+      <main className="content-area">
+        {currentScreen === "main" && (
+          <section className="page-card hero-card">
+            <h1>Интерактивный учебник по геометрии 8 класса</h1>
+            <p>
+              Теория, задания, аудиоуроки, поиск, диктор, лупа, QR-код,
+              личный кабинет и связь с учителем.
+            </p>
 
-            {/* ГЛАВНЫЙ ЭКРАН */}
-            {currentScreen === "main" && (
-              <section className="page-card hero-layout">
-                <div className="hero-section">
-                  <div className="hero-badge">Электронный Учебник</div>
-                  <h1>Геометрия 8 класса для слабовидящих учеников</h1>
-                  <p>
-                    Специализированная образовательная среда, снабженная векторными чертежами высокой четкости,
-                    голосовым синтезатором речи, адаптивными палитрами контрастности и интерактивными тестами контроля знаний.
-                  </p>
+            <button className="primary-btn" onClick={() => goTo("theory")}>
+              Начать обучение
+            </button>
+          </section>
+        )}
 
-                  <div className="hero-actions">
-                    <button className="primary-btn" onClick={() => goTo("learn")}>
-                      Открыть оглавление книги
-                    </button>
-                    <button className="secondary-btn" onClick={() => speakText("Учебник Геовижн 8. Разделы включают теорию четырехугольников, теорему Пифагора, площади фигур и аудиоуроки.")}>
-                      🔊 Озвучить сводку
-                    </button>
-                  </div>
-                </div>
+        {currentScreen === "theory" && (
+          <section className="page-card">
+            <h2>Теория по геометрии 8 класса</h2>
 
-                <section className="teacher-contact-mini">
-                  <h2>Быстрый вопрос преподавателю</h2>
-                  <form onSubmit={sendFeedback}>
-                    <textarea
-                      value={feedbackText}
-                      onChange={(e) => setFeedbackText(e.target.value)}
-                      placeholder="Опишите, какая геометрическая задача или теорема вызвала у вас затруднение..."
-                    />
-                    <button className="primary-btn" type="submit">Отправить сообщение</button>
-                  </form>
-                </section>
-              </section>
-            )}
+            <div className="topic-grid">
+              {filteredTheory.map((topic) => (
+                <div className="topic-card theory-card" key={topic.id}>
+                  <h3>{topic.title}</h3>
+                  <p>{topic.short}</p>
 
-            {/* ЭКРАН КАТЕГОРИЙ ОБУЧЕНИЯ */}
-            {currentScreen === "learn" && (
-              <section className="page-card">
-                <h2>Интерактивное рабочее пространство</h2>
-                <p className="subtitle-text">Используйте умную поисковую строку для быстрой фильтрации по терминам:</p>
-                
-                <input
-                  className="search-input"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Поиск по книге: ромб, площадь, треугольник, гипотенуза..."
-                  aria-label="Поле поиска по теории"
-                />
-
-                <div className="dashboard-grid">
-                  <button className="dashboard-card" onClick={() => goTo("theory")}>
-                    <b>📚 Теоретические главы</b>
-                    <span>Всего доступно: {geometryTheory.length} тем</span>
-                  </button>
-
-                  <button className="dashboard-card" onClick={() => goTo("tasks")}>
-                    <b>📝 Практика и тесты</b>
-                    <span>Ваш текущий рейтинг: {user.score} баллов</span>
-                  </button>
-
-                  <button className="dashboard-card" onClick={() => goTo("audio")}>
-                    <b>🎧 Аудиозаписи лекций</b>
-                    <span>В базе записано: {audioLessons.length} уроков</span>
-                  </button>
-                </div>
-              </section>
-            )}
-
-            {/* СПИСОК ГЛАВ ТЕОРИИ */}
-            {currentScreen === "theory" && (
-              <section className="page-card">
-                <h2>Оглавление теоретических материалов</h2>
-                <div className="topic-grid">
-                  {filteredTheory.map((topic) => (
-                    <button key={topic.id} className="topic-card" onClick={() => {
+                  <button
+                    className="primary-btn"
+                    onClick={() => {
                       setSelectedTopicId(topic.id);
                       goTo("topic");
-                    }}>
-                      <span className="topic-image">{topic.image || "📘"}</span>
-                      <strong>{topic.title}</strong>
-                      <small>{topic.short || "Нажмите для изучения параграфа"}</small>
-                    </button>
-                  ))}
-                  {filteredTheory.length === 0 && <p className="no-results">По вашему поисковому запросу ничего не найдено.</p>}
+                    }}
+                  >
+                    Изучить параграф
+                  </button>
                 </div>
-              </section>
-            )}
+              ))}
+            </div>
+          </section>
+        )}
 
-            {/* ДЕТАЛЬНЫЙ ПРОСМОТР ПАРАГРАФА (С SVG И CMS) */}
-            {currentScreen === "topic" && selectedTopic && (
-              <section className="page-card">
-                <button className="back-btn" onClick={() => goTo("theory")}>← К списку параграфов</button>
-                
-                <div className="topic-detail">
-                  <div className="big-figure-box">
-                    <div className="big-figure">{selectedTopic.image || "📐"}</div>
-                    {/* Инклюзивный интерактивный чертеж на чистом SVG для предотвращения пикселизации */}
-                    <svg width="160" height="160" viewBox="0 0 100 100" className="embedded-vector-geometry">
-                      <polygon points="10,90 90,90 10,20" fill="none" stroke="currentColor" strokeWidth="4" />
-                      <rect x="10" y="80" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" />
-                    </svg>
-                  </div>
+        {currentScreen === "topic" && selectedTopic && (
+          <section className="page-card">
+            <button className="back-btn" onClick={() => goTo("theory")}>
+              ← Назад к темам
+            </button>
 
-                  <div className="topic-text-block">
-                    <h2>{selectedTopic.title}</h2>
-                    <p className="main-article-content">{selectedTopic.content}</p>
-                    <div className="formula-box">
-                      <span>Математическое выражение:</span>
-                      <code>{selectedTopic.formula || "Формула выводится графически"}</code>
-                    </div>
+            <h2>{selectedTopic.title}</h2>
+            <p className="theory-text">{selectedTopic.content}</p>
 
-                    <button className="primary-btn wave-btn" onClick={() => speakText(`${selectedTopic.title}. ${selectedTopic.content}. Формула: ${selectedTopic.formula}`)}>
-                      🔊 Прослушать аудиодекларацию параграфа
-                    </button>
-                  </div>
-                </div>
+            <button
+              className="primary-btn"
+              onClick={() =>
+                speakText(`${selectedTopic.title}. ${selectedTopic.content}`)
+              }
+            >
+              🔊 Озвучить параграф
+            </button>
+          </section>
+        )}
 
-                {/* ПАНЕЛЬ CMS УПРАВЛЕНИЯ ДЛЯ ПРЕПОДАВАТЕЛЕЙ И АДМИНИСТРАТОРОВ */}
-                {canManageContent && (
-                  <div className="cms-box border-dashed-box">
-                    <h3>Панель управления контентом (CMS Модуль)</h3>
-                    <form onSubmit={addParagraph} className="cms-add-form">
-                      <input name="title" placeholder="Введите название нового параграфа" required />
-                      <textarea name="content" placeholder="Введите полный текст геометрической лекции" required />
-                      <button className="primary-btn text-emerald" type="submit">Опубликовать главу в учебник</button>
-                    </form>
+        {currentScreen === "tasks" && (
+          <section className="page-card">
+            <h2>Практический тренажёр по геометрии</h2>
 
-                    <button className="danger-btn delete-action-btn" onClick={() => deleteTopic(selectedTopic.id)}>
-                      🗑️ Полностью удалить данный параграф из системы
-                    </button>
-                  </div>
+            {filteredTasks.map((task) => (
+              <div className="task-card" key={task.id}>
+                <h3>{task.topic || "Геометрия 8 класс"}</h3>
+                <p>{task.question}</p>
+
+                {task.options?.map((option, index) => (
+                  <button
+                    className="answer-btn"
+                    key={`${task.id}-${index}`}
+                    onClick={() => checkAnswer(task.id, index)}
+                  >
+                    {index + 1}) {option}
+                  </button>
+                ))}
+
+                {taskStatuses[task.id] === "success" && (
+                  <p className="success-text">✓ Верно!</p>
                 )}
-              </section>
-            )}
 
-            {/* СПИСОК ЗАДАЧ */}
-            {currentScreen === "tasks" && (
-              <section className="page-card">
-                <h2>Интерактивный банк практических заданий</h2>
-                <div className="topic-grid">
-                  {tasks.map((task) => (
-                    <button key={task.id} className={`topic-card task-card-select ${user.completedTasks?.includes(task.id) ? "task-done-border" : ""}`} onClick={() => {
-                      setSelectedTaskId(task.id);
-                      goTo("task");
-                    }}>
-                      <span className="task-icon-marker">{user.completedTasks?.includes(task.id) ? "✅" : "📝"}</span>
-                      <strong>{task.title || task.question || "Задача по геометрии"}</strong>
-                      <small>{task.condition || "Нажмите, чтобы открыть математические условия задачи"}</small>
-                    </button>
-                  ))}
+                {taskStatuses[task.id] === "error" && (
+                  <p className="error-text">✗ Неверно, попробуйте ещё раз.</p>
+                )}
+              </div>
+            ))}
+          </section>
+        )}
+
+        {currentScreen === "audio" && (
+          <section className="page-card">
+            <h2>Аудиоуроки по геометрии</h2>
+
+            <div className="topic-grid">
+              {filteredAudio.map((lesson) => (
+                <div className="topic-card theory-card" key={lesson.id}>
+                  <h3>{lesson.title}</h3>
+                  <p>{lesson.text}</p>
+
+                  <button
+                    className="primary-btn"
+                    onClick={() => speakText(lesson.text)}
+                  >
+                    🔊 Слушать
+                  </button>
                 </div>
-              </section>
+              ))}
+            </div>
+          </section>
+        )}
+
+{currentScreen === "contacts" && !isAdmin && (
+  <section className="page-card">
+    <h2>{isTeacher ? "Сообщения учеников" : "Связь с учителем"}</h2>
+
+    {isStudent && (
+      <form className="message-form" onSubmit={sendMessage}>
+        <label>
+          Выберите учителя:
+          {isMirror ? (
+            <span style={{ fontWeight: "bold" }}>Выбор учителя</span>
+          ) : (
+            <select
+              value={targetTeacher}
+              onChange={(e) => setTargetTeacher(e.target.value)}
+              required
+            >
+              <option value="">-- Выберите учителя --</option>
+              {teachersList.map((t) => (
+                <option key={t.email} value={t.full_name}>{t.full_name}</option>
+              ))}
+            </select>
+          )}
+        </label>
+
+        <label>
+          Ваш вопрос:
+          {isMirror ? (
+            <span style={{ fontWeight: "bold" }}>Поле ввода вопроса</span>
+          ) : (
+            <textarea
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              placeholder="Введите текст вопроса..."
+              required
+            />
+          )}
+        </label>
+
+        {!isMirror && <button className="primary-btn" type="submit">Отправить</button>}
+      </form>
+    )}
+
+    {isTeacher && (
+      <label>
+        Фильтр по ученику:
+        <select value={selectedStudentFilter} onChange={(e) => setSelectedStudentFilter(e.target.value)}>
+          <option value="">Все ученики</option>
+          {studentsList.map((s) => <option key={s.id} value={s.full_name}>{s.full_name}</option>)}
+        </select>
+      </label>
+    )}
+
+    <div className="messages-list">
+      {filteredMessages.map((msg) => (
+        <div className="message-card" key={msg.id}>
+          <p><b>{msg.from}:</b> {msg.text}</p>
+          {msg.replies?.map((r, i) => <div key={i} className="reply-card"><b>{r.author}:</b> {r.text}</div>)}
+          {isTeacher && (
+            <div className="reply-row">
+              <input id={`reply-${msg.id}`} placeholder="Ответ..." />
+              <button onClick={() => {
+                const val = document.getElementById(`reply-${msg.id}`).value;
+                sendTeacherReply(msg.id, val);
+              }}>Ответить</button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  </section>
+)}
+
+        {currentScreen === "profile" && user && (
+          <section className="page-card">
+            <h2>
+              {isAdmin
+                ? "Административная панель"
+                : isTeacher
+                ? "Кабинет учителя" 
+                : "Кабинет ученика"}
+            </h2>
+
+            <p><b>ФИО:</b> {user.full_name}</p>
+            <p><b>Роль:</b> {user.role}</p>
+            <p><b>Школа:</b> {user.school}</p>
+            <p><b>Класс:</b> {user.student_class}</p>
+
+            {isStudent && (
+              <h3>Ваш рейтинг по заданиям: {user.score || 0} баллов</h3>
             )}
 
-            {/* ОДИНОЧНАЯ ЗАДАЧА С ПРОВЕРКОЙ */}
-            {currentScreen === "task" && selectedTask && (
-              <section className="page-card">
-                <button className="back-btn" onClick={() => goTo("tasks")}>← Вернуться к списку задач</button>
-                
-                <div className="task-solving-workspace">
-                  <h2>{selectedTask.title || "Решение задачи"}</h2>
-                  <p className="task-condition-text">{selectedTask.condition || selectedTask.question}</p>
-                  
-                  <div className="hint-box font-contrast-accent">
-                    💡 <b>Методическая подсказка:</b> {selectedTask.hint || "Внимательно изучите свойства векторов и площадей квадратов."}
-                  </div>
-
-                  <div className="interactive-form-row">
-                    <input
-                      className="answer-input"
-                      value={taskAnswers[selectedTask.id] || ""}
-                      onChange={(e) =>
-                        setTaskAnswers((prev) => ({
-                          ...prev,
-                          [selectedTask.id]: e.target.value,
-                        }))
-                      }
-                      placeholder="Введите полученное числовое значение или слово"
-                    />
-
-                    <button className="primary-btn check-btn" onClick={checkAnswer}>
-                      Проверить ответ на сервере
-                    </button>
-                  </div>
-
-                  {taskStatuses[selectedTask.id] === "success" && (
-                    <div className="status-banner success-bg">⚡ Ответ верный! Задание успешно выполнено.</div>
-                  )}
-
-                  {taskStatuses[selectedTask.id] === "error" && (
-                    <div className="status-banner error-bg">❌ Ответ неверный. Перепроверьте расчеты.</div>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {/* АУДИОУРОКИ */}
-            {currentScreen === "audio" && (
-              <section className="page-card">
-                <h2>Озвученные аудиолекции и подкасты</h2>
-                <p className="subtitle-text">Специальные аудиоматериалы с дикторским разбором сложных геометрических аксиом:</p>
-                <div className="topic-grid">
-                  {audioLessons.map((lesson) => (
-                    <div className="topic-card audio-card" key={lesson.id}>
-                      <span className="audio-wave-anim">🎧</span>
-                      <strong>{lesson.title}</strong>
-                      <small>{lesson.description || "Аудиозапись параграфа"}</small>
-                      <button className="primary-btn play-audio-btn" onClick={() => playAudioLesson(lesson)}>
-                        ▶ Запустить воспроизведение лекции
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* СВЯЗЬ / СООБЩЕНИЯ */}
-            {currentScreen === "contacts" && (
-              <section className="page-card">
-                <h2>{isStudent ? "Чат экстренной помощи преподавателя" : "Панель входящих вопросов студентов"}</h2>
-
-                {isStudent ? (
-                  <form className="feedback-form" onSubmit={sendFeedback}>
-                    <p>Если вам непонятно условие задачи или не работает интерфейс, напишите обращение напрямую учителю:</p>
-                    <textarea
-                      value={feedbackText}
-                      onChange={(e) => setFeedbackText(e.target.value)}
-                      placeholder="Пожалуйста, детально сформулируйте вашу проблему..."
-                      required
-                    />
-                    <button className="primary-btn" type="submit">Отправить текстовый пакет</button>
-                  </form>
-                ) : (
-                  <div className="messages-list-wrapper">
-                    <p>Список входящих тикетов от учеников закрепленных классов:</p>
-                    {feedbackList.map((m) => (
-                      <div className="message-box card-inner-shadow" key={m.id}>
-                        <div className="msg-meta">🔔 <b>Отправитель:</b> {m.author}</div>
-                        <div className="msg-body"><b>Текст обращения:</b> {m.text}</div>
-                      </div>
+            {isTeacher && (
+              <>
+                <h3>Список учеников</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ФИО</th>
+                      <th>Класс</th>
+                      <th>Баллы</th>
+                      <th>Пройденные задания</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {studentsList.map((student) => (
+                      <tr key={student.id}>
+                        <td>{student.full_name}</td>
+                        <td>{student.student_class}</td>
+                        <td>{student.score}</td>
+                        <td>{student.completedTasks?.length || 0}</td>
+                      </tr>
                     ))}
-                    {feedbackList.length === 0 && <p className="empty-placeholder-text">Нет непрочитанных сообщений от студентов.</p>}
-                  </div>
-                )}
-              </section>
+                  </tbody>
+                </table>
+              </>
             )}
 
-            {/* О ПРОЕКТЕ */}
-            {currentScreen === "about" && (
-              <section className="page-card">
-                <h2>О программном комплексе GeoVision 8</h2>
-                <p>
-                  Данное Web-приложение является законченным курсовым проектом по дисциплине «Интернет программирование».
-                  Разработано студентом группы Тг-1-23 Ашырбековым Алибеком КГТУ им. И. Раззакова.
-                </p>
-                <p>
-                  Приложение полностью удовлетворяет жестким инклюзивным требованиям стандартов WCAG 2.1 и ГОСТ для лиц с дефектами зрения.
-                  Архитектура построена на базе паттерна защищенного разделения ролей (RBAC) и адаптивного рендеринга виртуальных слоев.
-                </p>
-              </section>
+            {isAdmin && (
+              <>
+                <h3>Управление пользователями</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>ФИО</th>
+                      <th>Email</th>
+                      <th>Роль</th>
+                      <th>Школа</th>
+                      <th>Класс</th>
+                      <th>Действие</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usersDatabase.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.id}</td>
+                        <td>{item.full_name}</td>
+                        <td>{item.email}</td>
+                        <td>
+                          {isMirror ? (
+                            <span style={{ fontWeight: "bold" }}>{item.role}</span>
+                          ) : (
+                            <select
+                              value={item.role}
+                              onChange={(event) =>
+                                changeUserRole(item.id, event.target.value)
+                              }
+                              style={{ padding: "4px", borderRadius: "4px" }}
+                            >
+                              <option value="Ученик">Ученик</option>
+                              <option value="Учитель">Учитель</option>
+                              <option value="Администратор">Администратор</option>
+                            </select>
+                          )}
+                        </td>
+                        <td>{item.school}</td>
+                        <td>{item.student_class}</td>
+                        <td>
+                          {item.email !== user.email && (
+                            <button
+                              className="danger-btn"
+                              onClick={() => deleteUser(item.id)}
+                            >
+                              Удалить
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
             )}
+          </section>
+        )}
+      </main>
 
-            {/* ПРОФИЛЬ / СУБД ТАБЛИЦА */}
-            {currentScreen === "profile" && (
-              <section className="page-card">
-                <h2>{isStudent ? "Личный кабинет студента" : "Консоль администрирования РСУБД"}</h2>
-                
-                <div className="user-profile-meta-sheet">
-                  <p><b>ФИО авторизованного аккаунта:</b> {user.full_name}</p>
-                  <p><b>Системная привилегия / Роль:</b> <span className="role-badge-ui">{user.role}</span></p>
-                  <p><b>Учебное заведение:</b> {user.school}</p>
-                  <p><b>Закрепленный класс:</b> {user.student_class}</p>
-                  <p><b>Сумма набранных баллов:</b> {user.score} сом/баллов</p>
-                  <p><b>Уникальный сессионный JWT Токен:</b> <code>{user.token || "сессия без токена"}</code></p>
-                </div>
-
-                {canViewDatabase && (
-                  <div className="database-table-container margin-top-db">
-                    <h3>Реляционная таблица пользователей `users`</h3>
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>ID</th>
-                          <th>Полное имя</th>
-                          <th>Роль</th>
-                          <th>Учебное заведение</th>
-                          <th>Класс</th>
-                          <th>Баллы</th>
-                          <th>Выполнено</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {usersDatabase.map((u) => (
-                          <tr key={u.id} className={u.email === user.email ? "highlight-current-row" : ""}>
-                            <td>{u.id}</td>
-                            <td><b>{u.full_name}</b></td>
-                            <td>{u.role}</td>
-                            <td>{u.school}</td>
-                            <td>{u.student_class}</td>
-                            <td><span className="text-score-bold">{u.score}</span></td>
-                            <td>{u.completedTasks?.length || 0} шт.</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                <button className="danger-btn logout-action-trigger" onClick={() => {
-                  localStorage.removeItem("geo_user");
-                  setUser(null);
-                  goTo("main");
-                }}>
-                  Завершить сессию и выйти из аккаунта
-                </button>
-              </section>
-            )}
-          </main>
-
-          {/* ИНКЛЮЗИВНАЯ ПАНЕЛЬ ИНТЕГРАЦИИ QR-КОДОВ И ПОДЕЛИТЬСЯ */}
-          <aside className="qr-panel">
-            <div className="qr-box">
-              {/* Настоящий масштабируемый SVG QR-Код для демонстрации функционала */}
-              <svg width="64" height="64" viewBox="0 0 25 25" className="live-qr-code-matrix" fill="currentColor">
-                <path d="M0 0h7v7H0zm1 1v5h5V1zm1 1h3v3H2zm6-2h1v1H8zm1 1h1v2H9zm-1 2h1v1H8zm2-3h1v1h-1zm1 2h1v2h-1zm3-2h7v7h-7zm1 1v5h5V1zm1 1h3v3h-3zM0 18h7v7H0zm1 1v5h5v-5zm1 1h3v3H2zM18 18h7v7h-7zm1 1v5h5v-5zm1 1h3v3h-3zM10 10h2v2h-2zm3 3h3v1h-3zm-1 3h2v1h-2zm4-2h2v3h-2z"/>
-              </svg>
-              <small>QR: Экран / {currentScreen}</small>
-            </div>
-            
-            <div className="share-actions-group">
-              <span>Поделиться прогрессом:</span>
-              <button onClick={() => handleShare("whatsapp")} className="share-mini-btn wa">WhatsApp</button>
-              <button onClick={() => handleShare("telegram")} className="share-mini-btn tg">Telegram</button>
-              <button onClick={() => handleShare("native")} className="share-mini-btn link-c">Система</button>
-            </div>
-          </aside>
-
-          {/* ПОДВАЛ САЙТА */}
-          <footer className="footer">
-            <span>📐 GeoVision 8 — Инклюзивная образовательная среда по геометрии</span>
-            <div className="footer-links-row">
-              <span className="author-tag">Разработчик: Ашырбеков А. (Тг-1-23)</span>
-            </div>
-          </footer>
-        </>
-      )}
+      <footer className="site-footer">
+        <div className="footer-content-block">
+          <div className="footer-links">
+            <button onClick={sharePage}>🔗 Поделиться</button>
+            <a href={`https://wa.me/?text=${encodeURIComponent(pageUrl)}`} target="_blank" rel="noreferrer">WhatsApp</a>
+            <a href={`https://t.me/share/url?url=${encodeURIComponent(pageUrl)}`} target="_blank" rel="noreferrer">Telegram</a>
+            <a href="mailto:geovision8@gmail.com">Gmail</a>
+          </div>
+          <p className="copyright-text">© 2026 GeoVision 8 — интерактивный учебник по геометрии</p>
+        </div>
+        <div className="qr-code-widget">
+          <QRCodeSVG value={pageUrl} size={96} />
+          <small>QR: {currentScreen}</small>
+        </div>
+      </footer>
     </div>
   );
 
   return (
-    <div className={`app-container ${theme}`}>
-      {/* 1. Главный слой контента */}
-      {renderContent()}
+    <div className={`app-container ${theme} ${zoomMode ? "magnifier-active" : ""}`} style={dynamicTextStyles}>
+      
+      <div className="app-main-content-layer">
+        {renderPageContent(false)}
+      </div>
 
-      {/* 2. Изолированный слой Аппаратной Лупы без бесконечной рекурсии */}
-      {isMagnifierActive && (
-        <div
-          className="real-hardware-lens-circle"
-          style={{
-            position: "fixed",
-            pointerEvents: "none",
-            width: `${magnifierRadius * 2}px`,
-            height: `${magnifierRadius * 2}px`,
-            borderRadius: "50%",
-            border: "4px solid #f59e0b",
-            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(0,0,0,0.3)",
-            overflow: "hidden",
-            zIndex: 99999,
-            left: `${mousePos.clientX - magnifierRadius}px`,
-            top: `${mousePos.clientY - magnifierRadius}px`,
+      {zoomMode && (
+        <div 
+          className="real-hardware-lens-circle" 
+          style={{ 
+            left: `${mousePos.x}px`, 
+            top: `${mousePos.y}px`,
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "none"
           }}
         >
-          <div
-            className="magnified-app-copy"
-            style={{
-              position: "absolute",
-              width: `${window.innerWidth}px`,
-              left: `${magnifierRadius - mousePos.clientX * magnifierScale}px`,
-              top: `${magnifierRadius - mousePos.clientY * magnifierScale}px`,
-              transform: `scale(${magnifierScale})`,
-              transformOrigin: "top left",
-              background: "inherit",
-            }}
-          >
-            {/* Отрисовка контента внутри линзы с сохранением стилей темы */}
-            <div className={`app-container ${theme} magnified-inner-view`}>
-              {renderContent()}
-            </div>
+          <div className="lens-mirrored-content" style={magnifierContentStyle}>
+            {renderPageContent(true)}
           </div>
         </div>
       )}

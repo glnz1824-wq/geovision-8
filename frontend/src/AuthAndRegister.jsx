@@ -1,214 +1,183 @@
-import React, { useMemo, useState } from "react";
+import React, { useState, useEffect } from "react";
 
-function AuthAndRegister({ onLoginSuccess, dynamicTextStyles }) {
-  const [isRegister, setIsRegister] = useState(false);
-
+export default function AuthAndRegister({ onLoginSuccess, dynamicTextStyles = {} }) {
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("student@test.com");
-  const [password, setPassword] = useState("1234");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [school, setSchool] = useState("");
+  const [studentClass, setStudentClass] = useState("");
   const [role, setRole] = useState("Ученик");
-  const [school, setSchool] = useState("Школа им. Мукая Элебаева");
-  const [studentClass, setStudentClass] = useState("8-А");
-  const [showPassword, setShowPassword] = useState(false);
 
-  const [captchaAnswer, setCaptchaAnswer] = useState("");
-  const [captchaKey, setCaptchaKey] = useState(0);
+  // Математическая капча
+  const [captchaNum1, setCaptchaNum1] = useState(6);
+  const [captchaNum2, setCaptchaNum2] = useState(2);
+  const [userCaptchaAnswer, setUserCaptchaAnswer] = useState("");
 
-  const captcha = useMemo(() => {
-    const a = Math.floor(Math.random() * 9) + 1;
-    const b = Math.floor(Math.random() * 9) + 1;
-    return { a, b, answer: a + b };
-  }, [captchaKey, isRegister]);
+  useEffect(() => {
+    setCaptchaNum1(Math.floor(Math.random() * 8) + 2);
+    setCaptchaNum2(Math.floor(Math.random() * 7) + 1);
+    setUserCaptchaAnswer("");
+  }, [isLoginMode]);
 
-  const resetCaptcha = () => {
-    setCaptchaAnswer("");
-    setCaptchaKey((prev) => prev + 1);
-  };
+  function handleSubmit(e) {
+    e.preventDefault();
 
-  const submitForm = async (event) => {
-    event.preventDefault();
-
-    if (Number(captchaAnswer) !== captcha.answer) {
-      alert("Капча решена неверно");
-      resetCaptcha();
+    const correctAnswer = captchaNum1 + captchaNum2;
+    if (Number(userCaptchaAnswer) !== correctAnswer) {
+      alert(`Неверный ответ на капчу! Сколько будет ${captchaNum1} + ${captchaNum2}? Попробуйте еще раз.`);
       return;
     }
 
-    if (isRegister && password.length < 6) {
-      alert("Пароль должен быть минимум 6 символов");
+    if (!email.trim() || !password.trim()) {
+      alert("Заполните логин и пароль");
       return;
     }
 
-    if (isRegister && password !== confirmPassword) {
-      alert("Пароли не совпадают");
-      return;
-    }
+    const encodedPassword = btoa(unescape(encodeURIComponent(password)));
 
-    const url = isRegister
-      ? "http://localhost:5000/api/register"
-      : "http://localhost:5000/api/login";
-
-    const body = isRegister
-      ? {
-          full_name: fullName,
-          email,
-          password,
-          role,
-          school,
-          student_class: studentClass,
-        }
-      : { email, password };
-
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+    if (isLoginMode) {
+      onLoginSuccess({
+        mode: "login",
+        email,
+        password: encodedPassword,
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        alert(data.message || "Ошибка");
-        resetCaptcha();
+    } else {
+      if (!fullName.trim() || !school.trim() || !studentClass.trim()) {
+        alert("Пожалуйста, заполните все поля регистрации");
         return;
       }
-
-      localStorage.setItem("geo_token", data.token);
-      localStorage.setItem("geo_user", JSON.stringify(data.user));
-
-      onLoginSuccess(data.user, data.token);
-    } catch {
-      alert("Backend не запущен. Запусти: cd backend → node server.js");
+      onLoginSuccess({
+        mode: "register",
+        full_name: fullName,
+        email,
+        password: encodedPassword,
+        role,
+        school,
+        student_class: studentClass,
+      });
     }
-  };
+  }
 
   return (
-    <div className="auth-page" style={dynamicTextStyles}>
-      <div className="auth-card">
-        <div className="auth-icon">{isRegister ? "📝" : "🔐"}</div>
+    <div className="auth-modern-card" style={dynamicTextStyles}>
+      <h2 style={{ textAlign: "center", marginBottom: "20px" }}>
+        {isLoginMode ? "Авторизация в системе" : "Регистрация нового профиля"}
+      </h2>
 
-        <h2>{isRegister ? "Регистрация" : "Вход в систему"}</h2>
-        <p className="auth-subtitle">GeoVision 8 · геометрия 8 класс</p>
-
-        <form onSubmit={submitForm} className="auth-form">
-          {isRegister && (
-            <label>
-              ФИО пользователя
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        
+        {!isLoginMode && (
+          <>
+            <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              ФИО полностью:
               <input
+                type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="Например: Айгерим Осмонова"
+                placeholder="Например: Эмма Киперова"
                 required
               />
             </label>
-          )}
 
-          <label>
-            Электронная почта
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              Ваша роль в системе:
+              <select value={role} onChange={(e) => setRole(e.target.value)} required>
+                <option value="Ученик">Ученик</option>
+                <option value="Учитель">Учитель</option>
+              </select>
+            </label>
 
-          <label>
-            Пароль
-            <div className="password-line">
+            <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              Наименование школы:
               <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                type="text"
+                value={school}
+                onChange={(e) => setSchool(e.target.value)}
+                placeholder="Например: Школа №1"
                 required
               />
+            </label>
 
-              <button
-                type="button"
-                className="eye-btn"
-                onClick={() => setShowPassword((prev) => !prev)}
-              >
-                {showPassword ? "🙈" : "👁️"}
-              </button>
-            </div>
-          </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              Класс:
+              <input
+                type="text"
+                value={studentClass}
+                onChange={(e) => setStudentClass(e.target.value)}
+                placeholder={role === "Учитель" ? "Например: Учитель математики" : "Например: 8-Б"}
+                required
+              />
+            </label>
+          </>
+        )}
 
-          {isRegister && (
-            <>
-              <label>
-                Подтвердите пароль
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                />
-              </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          Электронная почта (Email):
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="example@test.com"
+            required
+          />
+        </label>
 
-              <label>
-                Роль
-                <select value={role} onChange={(e) => setRole(e.target.value)}>
-                  <option value="Ученик">Ученик</option>
-                  <option value="Учитель">Учитель</option>
-                </select>
-              </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          Пароль аккаунта:
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            required
+          />
+        </label>
 
-              <label>
-                Учебное заведение
-                <input
-                  value={school}
-                  onChange={(e) => setSchool(e.target.value)}
-                  required
-                />
-              </label>
-
-              <label>
-                Класс
-                <input
-                  value={studentClass}
-                  onChange={(e) => setStudentClass(e.target.value)}
-                  required
-                />
-              </label>
-            </>
-          )}
-
-          <label>
-            Капча: {captcha.a} + {captcha.b} = ?
+        <div style={{
+          background: "rgba(0,0,0,0.04)",
+          padding: "10px",
+          borderRadius: "6px",
+          marginTop: "10px"
+        }}>
+          <p style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: "bold" }}>
+            Защита от роботов (Капча):
+          </p>
+          <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "16px", letterSpacing: "1px" }}>
+              {captchaNum1} + {captchaNum2} =
+            </span>
             <input
               type="number"
-              value={captchaAnswer}
-              onChange={(e) => setCaptchaAnswer(e.target.value)}
-              placeholder="Введите ответ"
+              value={userCaptchaAnswer}
+              onChange={(e) => setUserCaptchaAnswer(e.target.value)}
+              placeholder="Ответ"
+              style={{ width: "80px", padding: "6px" }}
               required
             />
           </label>
+        </div>
 
-          <button className="auth-submit" type="submit">
-            {isRegister ? "Зарегистрироваться" : "Войти"}
-          </button>
-        </form>
+        <button className="primary-btn" type="submit" style={{ marginTop: "15px", padding: "10px" }}>
+          {isLoginMode ? "Войти в кабинет" : "Завершить регистрацию"}
+        </button>
+      </form>
 
+      <div style={{ textAlign: "center", marginTop: "15px" }}>
         <button
-          className="auth-switch"
-          type="button"
-          onClick={() => {
-            setIsRegister((prev) => !prev);
-            resetCaptcha();
-            setConfirmPassword("");
+          onClick={() => setIsLoginMode(!isLoginMode)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#2563eb",
+            textDecoration: "underline",
+            cursor: "pointer",
+            fontSize: "14px"
           }}
         >
-          {isRegister ? "Уже есть профиль? Войти" : "Нет профиля? Регистрация"}
+          {isLoginMode ? "У вас еще нет аккаунта? Зарегистрироваться" : "Уже есть аккаунт? Авторизоваться"}
         </button>
-
-        <div className="auth-security">
-          🛡 Капча · JWT-токен · bcrypt-кодирование пароля
-        </div>
       </div>
     </div>
   );
 }
-
-export default AuthAndRegister;
