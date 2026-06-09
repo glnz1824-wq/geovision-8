@@ -11,7 +11,7 @@ const app = express();
 app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true }));
 app.use(express.json());
 
-// 1. Сначала подключаем статику (ваш фронтенд)
+// 1. Сначала статика (фронтенд)
 app.use(express.static(path.join(__dirname, 'dist')));
 
 const pool = new Pool({
@@ -26,7 +26,7 @@ const SECRET = process.env.JWT_SECRET || "geovision8_secret_key";
 const ROLES = { STUDENT: "Ученик", TEACHER: "Учитель", ADMIN: "Администратор" };
 const MAX_TASK_POINTS = 100;
 
-// Функции-помощники
+// Функции-помощники (auth, и т.д.)
 function createToken(user) {
   return jwt.sign({ id: user.id, email: user.email, role: user.role }, SECRET, { expiresIn: "2h" });
 }
@@ -45,31 +45,22 @@ function teacherOrAdmin(req, res, next) {
   return res.status(403).json({ message: "Нет доступа" });
 }
 
-// 2. Ваши API маршруты
-app.post("/api/register", async (req, res) => { /* ваш код регистрации */ });
-app.post("/api/login", async (req, res) => { /* ваш код входа */ });
-app.get("/api/users", auth, teacherOrAdmin, async (req, res) => { /* ваш код пользователей */ });
-app.post("/api/feedback", auth, async (req, res) => { /* ваш код feedback */ });
-app.get("/api/feedback", auth, teacherOrAdmin, async (req, res) => { /* ваш код feedback get */ });
-app.post("/api/results", auth, async (req, res) => { /* ваш код сохранения результатов */ });
-app.get("/api/results", auth, async (req, res) => { /* ваш код получения результатов */ });
+// 2. API маршруты
+app.post("/api/register", async (req, res) => { /* ваш код */ });
+app.post("/api/login", async (req, res) => { /* ваш код */ });
+app.get("/api/users", auth, teacherOrAdmin, async (req, res) => { /* ваш код */ });
+app.post("/api/feedback", auth, async (req, res) => { /* ваш код */ });
+app.get("/api/feedback", auth, teacherOrAdmin, async (req, res) => { /* ваш код */ });
+app.post("/api/results", auth, async (req, res) => { /* ваш код */ });
+app.get("/api/results", auth, async (req, res) => { /* ваш код */ });
 
 // 3. Последним ставим обработчик фронтенда (React SPA)
+// Он должен быть в самом конце, чтобы не перебивать API маршруты
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 const PORT = process.env.PORT || 10000;
-const path = require("path");
-
-// Раздача статических файлов из папки dist
-app.use(express.static(path.join(__dirname, 'dist')));
-
-// Перенаправление всех остальных запросов на index.html (для работы React Router)
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
 });
