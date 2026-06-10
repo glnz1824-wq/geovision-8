@@ -1,9 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const { Pool } = require("pg");
-const path = require("path"); 
+const path = require("path"); // Импортируем path ОДИН раз
 require("dotenv").config();
 
 const app = express();
@@ -11,52 +8,14 @@ const app = express();
 app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true }));
 app.use(express.json());
 
-// 1. Сначала статика (фронтенд)
+// Раздача статики (папка dist должна лежать в папке backend)
 app.use(express.static(path.join(__dirname, 'dist')));
 
-const pool = new Pool({
-  user: process.env.DB_USER || "postgres",
-  host: process.env.DB_HOST || "localhost",
-  database: process.env.DB_NAME || "geovision8",
-  password: process.env.DB_PASSWORD || "1234",
-  port: Number(process.env.DB_PORT) || 5432,
-});
+// --- Ваши API маршруты ---
+// ... (оставьте ваши app.post и app.get)
 
-const SECRET = process.env.JWT_SECRET || "geovision8_secret_key";
-const ROLES = { STUDENT: "Ученик", TEACHER: "Учитель", ADMIN: "Администратор" };
-const MAX_TASK_POINTS = 100;
-
-// Функции-помощники (auth, и т.д.)
-function createToken(user) {
-  return jwt.sign({ id: user.id, email: user.email, role: user.role }, SECRET, { expiresIn: "2h" });
-}
-
-function auth(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith("Bearer ")) return res.status(401).json({ message: "Нет токена" });
-  try {
-    req.user = jwt.verify(header.split(" ")[1], SECRET);
-    next();
-  } catch (e) { return res.status(401).json({ message: "Неверный токен" }); }
-}
-
-function teacherOrAdmin(req, res, next) {
-  if (req.user && (req.user.role === ROLES.TEACHER || req.user.role === ROLES.ADMIN)) return next();
-  return res.status(403).json({ message: "Нет доступа" });
-}
-
-// 2. API маршруты
-app.post("/api/register", async (req, res) => { /* ваш код */ });
-app.post("/api/login", async (req, res) => { /* ваш код */ });
-app.get("/api/users", auth, teacherOrAdmin, async (req, res) => { /* ваш код */ });
-app.post("/api/feedback", auth, async (req, res) => { /* ваш код */ });
-app.get("/api/feedback", auth, teacherOrAdmin, async (req, res) => { /* ваш код */ });
-app.post("/api/results", auth, async (req, res) => { /* ваш код */ });
-app.get("/api/results", auth, async (req, res) => { /* ваш код */ });
-
-// 3. Последним ставим обработчик фронтенда (React SPA)
-// Он должен быть в самом конце, чтобы не перебивать API маршруты
-app.get('*', (req, res) => {
+// В самом конце - обработчик фронтенда
+app.get('/*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
