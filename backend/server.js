@@ -9,12 +9,10 @@ app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173", creden
 app.use(express.json());
 
 // Раздача статики 
-app.use(express.static(path.join(__dirname, '..', 'dist')));
-
-// --- API маршруты ---
+app.use(express.static(path.join(__dirname, "dist")));
 
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "..", "dist", "index.html"));
+  res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
 const PORT = process.env.PORT || 10000;
